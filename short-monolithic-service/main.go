@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,8 +14,11 @@ import (
 
 type Shortened struct {
 	gorm.Model
+	ID        uint   `gorm:"primaryKey"`
 	Url       string `gorm:"not null"`
 	ShortCode string `gorm:"not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func NewShortened(url string) *Shortened {
@@ -33,19 +37,23 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	db, err := gorm.Open(postgres.Open(os.Getenv("DATABASE_URL")), &gorm.Config{})
+	db, err := gorm.Open(
+		postgres.Open(os.Getenv("DATABASE_URL")),
+		&gorm.Config{},
+	)
 	if err != nil {
 		panic(err)
 	}
 	db.AutoMigrate(&Shortened{})
 
 	r := gin.Default()
+
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
 		})
 	})
+
 	r.GET("/shorten", func(c *gin.Context) {
 		var shortened []Shortened
 		tx := db.Find(&shortened)
@@ -57,6 +65,7 @@ func main() {
 		}
 		c.JSON(http.StatusOK, shortened)
 	})
+
 	r.POST("/shorten", func(c *gin.Context) {
 		var req ShortenedRequest
 		c.BindJSON(&req)
@@ -73,20 +82,50 @@ func main() {
 			"rowsAffected": tx.RowsAffected,
 		})
 	})
+
 	r.PUT("/shorten/:id", func(c *gin.Context) {
 		var req ShortenedRequest
 		c.BindJSON(&req)
-		var shortened Shortened
-		tx := db.First(&shortened, c.Param("id"))
+
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid ID",
+			})
+			return
+		}
+		shortened := Shortened{
+			ID:        uint(id),
+			Url:       req.Url,
+			ShortCode: "abc1234",
+			UpdatedAt: time.Now(),
+		}
+
+		tx := db.Save(&shortened)
 		if tx.Error != nil {
-			c.JSON(http.StatusNotFound, gin.H{
+			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": tx.Error.Error(),
 			})
 			return
 		}
-		shortened.Url = req.Url
-		shortened.UpdatedAt = time.Now()
-		tx = db.Save(&shortened)
+		c.JSON(http.StatusOK, gin.H{
+			"id":           shortened.ID,
+			"rowsAffected": tx.RowsAffected,
+		})
+	})
+
+	r.DELETE("/shorten/:id", func(c *gin.Context) {
+		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid ID",
+			})
+			return
+		}
+		shortened := Shortened{
+			ID: uint(id),
+		}
+		tx := db.Delete(&shortened)
 		if tx.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": tx.Error.Error(),
