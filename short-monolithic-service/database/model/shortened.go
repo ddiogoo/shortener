@@ -16,9 +16,22 @@ type Shortened struct {
 	UpdatedAt time.Time
 }
 
-func NewShortened(url string) *Shortened {
+func NewShortenedCreate(url string) *Shortened {
 	return &Shortened{
 		Url:       url,
 		ShortCode: key.MD5Hash(url),
 	}
+}
+
+func NewShortenedUpdate(id uint, url string) *Shortened {
+	return &Shortened{
+		ID:        id,
+		Url:       url,
+		ShortCode: key.MD5Hash(url),
+		UpdatedAt: time.Now(),
+	}
+}
+
+func NewShortenedDelete(id uint) *Shortened {
+	return &Shortened{ID: id}
 }
