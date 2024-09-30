@@ -3,83 +3,67 @@ package routes
 import (
 	"net/http"
 	"os"
-	"strconv"
 
-	"github.com/ddiogoo/shortener/tree/master/short-monolithic-service/database/model"
-	"github.com/ddiogoo/shortener/tree/master/short-monolithic-service/routes/dto"
+	"github.com/ddiogoo/shortener/tree/master/short-monolithic-service/database"
+	"github.com/ddiogoo/shortener/tree/master/short-monolithic-service/models"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-func Routes(db *gorm.DB) (*gin.Engine, string) {
+type PingResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type ShortenedResponse struct {
+	Status  string             `json:"status"`
+	Message string             `json:"message"`
+	Data    []models.Shortened `json:"data"`
+}
+
+func Routes() (*gin.Engine, string) {
+	db, err := database.New[models.Shortened]()
+	if err != nil {
+		panic(err)
+	}
 	r := gin.Default()
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "pong",
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, PingResponse{
+			Status:  "ok",
+			Message: "welcome to the shortener api",
 		})
 	})
-	r.GET("/shorten", func(c *gin.Context) {
-		var shortened []model.Shortened
-		tx := db.Find(&shortened)
-		if tx.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": tx.Error.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusOK, shortened)
-	})
-	r.POST("/shorten", func(c *gin.Context) {
-		req := dto.NewShortenedRequest()
-		c.BindJSON(&req)
-		shortened := model.NewShortenedCreate(req.Url)
-		tx := db.Create(&shortened)
-		if tx.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": tx.Error.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusCreated, dto.NewShortenedResponse(shortened.ID, tx.RowsAffected))
-	})
-	r.PUT("/shorten/:id", func(c *gin.Context) {
-		req := dto.NewShortenedRequest()
-		c.BindJSON(&req)
-
-		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	r.GET("/all", func(c *gin.Context) {
+		results, err := db.RetrieveAll()
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid ID",
+			c.JSON(http.StatusInternalServerError, ShortenedResponse{
+				Status:  "error",
+				Message: err.Error(),
+				Data:    []models.Shortened{},
 			})
 			return
 		}
-		shortened := model.NewShortenedUpdate(uint(id), req.Url)
-		tx := db.Save(&shortened)
-		if tx.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": tx.Error.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusOK, dto.NewShortenedResponse(shortened.ID, tx.RowsAffected))
+		c.JSON(http.StatusOK, ShortenedResponse{
+			Status:  "success",
+			Message: "all shortened urls",
+			Data:    results,
+		})
 	})
-	r.DELETE("/shorten/:id", func(c *gin.Context) {
-		id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	r.GET("/:code", func(c *gin.Context) {
+		code := c.Param("code")
+		result, err := db.RetrieveOne("short_code = ?", code)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid ID",
+			c.JSON(http.StatusNotFound, ShortenedResponse{
+				Status:  "error",
+				Message: "shortened url not found",
+				Data:    []models.Shortened{},
 			})
 			return
 		}
-		shortened := model.NewShortenedDelete(uint(id))
-		tx := db.Delete(&shortened)
-		if tx.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": tx.Error.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusOK, dto.NewShortenedResponse(shortened.ID, tx.RowsAffected))
+		c.JSON(http.StatusOK, ShortenedResponse{
+			Status:  "success",
+			Message: "shortened url",
+			Data:    []models.Shortened{result},
+		})
 	})
 	return r, func() string {
 		if os.Getenv("PORT") == "" {

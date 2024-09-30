@@ -1,11 +1,11 @@
-package key
+package util
 
 import (
 	"crypto/md5"
 	"encoding/hex"
 )
 
-func MD5Hash(text string) string {
+func GenerateShortCode(text string) string {
 	hash := md5.Sum([]byte(text))
 	return hex.EncodeToString(hash[0:4])
 }
